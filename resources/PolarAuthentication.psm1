@@ -24,7 +24,8 @@ class PolarAuthentication {
 
     getAuthorizationUrl(){
 
-        $this.clientId = [System.Web.HttpUtility]::UrlEncode($this.polarAuth.GetNetworkCredential().Username)
+        $this.clientID = [System.Web.HttpUtility]::UrlEncode($this.polarAuth.GetNetworkCredential().Username)
+        $this.clientSecret = [System.Web.HttpUtility]::UrlEncode($this.polarAuth.GetNetworkCredential().Password)
         $this.authorizationUrl = "$($this.authorizationUrl)?response_type=code&client_id=$($this.clientID)"
         
         #$response = Invoke-WebRequest -Uri $this.authorizationUrl -Method Get -ContentType "application/x-www-form-urlencoded" -Headers $params -ErrorAction "Stop"
@@ -36,6 +37,7 @@ class PolarAuthentication {
         $ie = New-Object -com InternetExplorer.Application
         $ie.navigate2($this.authorizationUrl)
         $ie.Visible=$true
+        Start-Sleep 5
         $Shell = New-Object -com "Shell.Application"
         $result = $shell.Windows() | Select-Object locationname
         $url = ($result | Where-Object {$_ -match "(https?://.+)"}).locationname
@@ -50,47 +52,24 @@ class PolarAuthentication {
             # Extract Access token from the returned URI.
             $url | Where-Object {$_ -match $authCodeRegex}
             $authCode = $Matches[0]
-            
+
+            $base64IdSecret = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes("$($this.clientID):$($this.clientSecret)"))            
             # Get Access Token.
+            #TODO: invalid Client Error maybe because authentication needs headers
+            $HeaderParams = @{
+                "Content-Type" = "application/x-www-form-urlencoded"
+                "Accept" = "application/json;charset=UTF-8"
+                "Authorization" = "Basic $base64IdSecret"
+            }
+
             $Body = "grant_type=authorization_code&code=$authCode"
-            $this.tokenresponse = Invoke-RestMethod $this.accessTokenUrl -Method Post -ContentType "application/x-www-form-urlencoded" -Body $Body -ErrorAction "Stop"
+
+            $this.tokenresponse = Invoke-RestMethod $this.accessTokenUrl -Method Post `
+            -Body $Body -Headers $HeaderParams -ErrorAction "Stop"
 
             $this.tokenresponse.access_token
         }
 
         
     }
-
-    <# getAuthCode(){
-        Add-Type -AssemblyName System.Windows.Forms
-        $Form = New-Object -TypeName System.Windows.Forms.Form -Property @{Width = 440; Height = 640 }
-        $Web = New-Object -TypeName System.Windows.Forms.WebBrowser -Property @{
-            Width = 420; Height = 600; Url = $this.authorizationUrl  }
-        $DocComp = {
-            $Global:uri = $Web.Url.AbsoluteUri        
-            if ($Global:uri -match "error=[^&]*|code=[^&]*") { $Form.Close() }
-        }
-
-        $Web.ScriptErrorsSuppressed = $true
-        $Web.Add_DocumentCompleted($DocComp)
-        $Form.Controls.Add($Web)
-        $Form.Add_Shown( { $Form.Activate() })
-        $Form.ShowDialog() | Out-Null
-        $QueryOutput = [System.Web.HttpUtility]::ParseQueryString($Web.Url.Query)
-        $Output = @{ }
-
-        foreach ($Key in $QueryOutput.Keys) {
-            $Output["$Key"] = $QueryOutput[$Key]
-        }
-
-        # Extract Access token from the returned URI.
-        $regex = '(?<=code=)(.*)(?=&)'
-        $authCode = ($Global:uri | Select-string -pattern $regex).Matches[0].Value
-
-         # Get Access Token.
-        $Body = "grant_type=authorization_code&code=$authCode"
-        $this.tokenresponse = Invoke-RestMethod $this.accessTokenUrl -Method Post -ContentType "application/x-www-form-urlencoded" -Body $Body -ErrorAction "Stop"
-
-        $this.tokenresponse.access_token
-    } #>
 }
