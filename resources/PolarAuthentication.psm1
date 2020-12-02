@@ -35,12 +35,12 @@ class PolarAuthentication {
     getAuthCode(){
         $authCodeRegex = '(?<=code=)(.*)'
         $ie = New-Object -com InternetExplorer.Application
-        $ie.navigate2($this.authorizationUrl)
         $ie.Visible=$true
+        $ie.navigate2($this.authorizationUrl)
         Start-Sleep 5
         $Shell = New-Object -com "Shell.Application"
         $result = $shell.Windows() | Select-Object locationname
-        $url = ($result | Where-Object {$_ -match "(https?://.+)"}).locationname
+        $url = ($result | Where-Object {$_ -match "(http?://.+)"}).locationname
         if ($url -match "error=[^&]*"){
             #$ie.quit()
             Write-Error "Error happen while authentication, please check your setup"
@@ -55,17 +55,55 @@ class PolarAuthentication {
 
             $base64IdSecret = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes("$($this.clientID):$($this.clientSecret)"))            
             # Get Access Token.
-            #TODO: invalid Client Error maybe because authentication needs headers
+            #TODO: invalid Client Error because header needs at least host, cookie, content-length parameter
+            # check Postman for successfull attempt
+            $Body = "grant_type=authorization_code&code=$authCode"
             $HeaderParams = @{
-                "Content-Type" = "application/x-www-form-urlencoded"
+                # by Post Method Content-Type is application/x-www-form-urlencoded when Flag is omitted
+                #"Content-Type" = "application/x-www-form-urlencoded"
+                #Cookie Headers or User-Agent can not be used within those headers
                 "Accept" = "application/json;charset=UTF-8"
                 "Authorization" = "Basic $base64IdSecret"
-            }
+                "Content-Length" = [System.Text.Encoding]::UTF8.GetByteCount($Body)
+                "Host" = "polarremote.com"
+            } #>
 
-            $Body = "grant_type=authorization_code&code=$authCode"
 
-            $this.tokenresponse = Invoke-RestMethod $this.accessTokenUrl -Method Post `
-            -Body $Body -Headers $HeaderParams -ErrorAction "Stop"
+            #TODO: https://docs.microsoft.com/en-us/dotnet/api/system.net.httpwebrequest?view=net-5.0
+            # https://stackoverflow.com/questions/5470474/powershell-httpwebrequest-get-method-cookiecontainer-problem
+            # https://en.wikipedia.org/wiki/List_of_HTTP_header_fields#Standard_request_fields
+            # https://gallery.technet.microsoft.com/scriptcenter/Getting-Cookies-using-3c373c7e
+            #TODO: https://stackoverflow.com/questions/36544334/powershell-net-httpclient-add-header
+
+            #TODO: how does a post work?
+            Add-Type -AssemblyName System.Net.Http
+            $httpClientHandler = New-Object System.Net.Http.HttpClientHandler
+            $httpClient = New-Object System.Net.Http.Httpclient $httpClientHandler
+            $httpRequest = New-Object System.Net.Http.HttpRequestMessage
+            $mediatype = New-Object System.Net.Http.Headers.MediaTypeHeaderValue("application/x-www-form-urlencoded")
+            $encoding = New-Object System.Text.UTF8Encoding
+            $uri = New-Object System.Uri($this.accessTokenUrl)
+
+            $httpClient.DefaultRequestHeaders.Authorization = `
+            New-Object System.Net.Http.Headers.AuthenticationHeaderValue("Basic", $base64IdSecret);
+            $httpClient.DefaultRequestHeaders.Host  = "polarremote.com"
+
+
+            $httpRequest.Content = New-Object System.Net.Http.StringContent($Body,$encoding,$mediatype)
+            $httpRequest.Method = "POST"
+            #$httpRequest.Headers.Accept = "application/json;charset=UTF-8"
+            $httpRequest.RequestUri = $this.accessTokenUrl
+
+            $response = $httpClient.PostAsync($uri, $httpRequest)
+
+
+
+
+            <# $this.tokenresponse = Invoke-RestMethod $this.accessTokenUrl -Method Post `
+            -Body $Body -Headers $HeaderParams -TransferEncoding "chunked"`
+            -ErrorAction "Stop"
+ #>
+            
 
             $this.tokenresponse.access_token
         }

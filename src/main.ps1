@@ -11,6 +11,9 @@ $Global:resourcespath = join-path -path "$mainPath" -ChildPath "resources"
 $Global:errorVariable = "Stop"
 $Global:logFile = "$resourcespath\processing.log"
 
+# Force TLS 1.2.
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 Import-Module -Force "$resourcespath\PolarAuthentication.psm1"
 
 "$(Get-Date) [Processing] Start--------------------------" >> $Global:logFile
